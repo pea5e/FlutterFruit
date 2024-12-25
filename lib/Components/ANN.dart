@@ -1,110 +1,98 @@
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import 'dart:typed_data';
 import 'dart:html' as html;
-import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+import 'package:flutter/material.dart';
 
 class ImageUploadScreen extends StatefulWidget {
   @override
-  _ImageUploadScreenState createState() => _ImageUploadScreenState();
+  State<ImageUploadScreen> createState() => _ImageUploadScreenState();
 }
 
 class _ImageUploadScreenState extends State<ImageUploadScreen> {
-  File? _image;
+  List<int>? _selectedFile;
+  Uint8List? _bytesData;
 
-  // Function to pick image from gallery
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+  startWebFilePicker() async {
+    html.FileUploadInputElement uploadInput = html.FileUploadInputElement();
+    uploadInput.multiple = true;
+    uploadInput.draggable = true;
+    uploadInput.click();
 
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
+    uploadInput.onChange.listen((event) {
+      final files = uploadInput.files;
+      final file = files![0];
+      final reader = html.FileReader();
+
+      reader.onLoadEnd.listen((event) {
+        setState(() {
+          _bytesData =
+              Base64Decoder().convert(reader.result.toString().split(",").last);
+          _selectedFile = _bytesData;
+        });
       });
-    }
-
+      reader.readAsDataUrl(file);
+    });
   }
 
-  Future<void> _uploadImage() async {
-    print("upload");
+  Future uploadImage() async {
+    var url = Uri.parse("http://127.0.0.1:5000/");
+    var request = http.MultipartRequest("POST", url);
+    request.files.add(await http.MultipartFile.fromBytes('file', _selectedFile!,
+        contentType: MediaType('application', 'json'), filename: "Any_name"));
 
-    final reader = html.FileReader();
-    reader.readAsDataUrl(html.Blob([_image])); // Read file as data URL (Base64)
-    
-    reader.onLoadEnd.listen((e) async {
-  // Replace with your API URL
-  final uri = Uri.parse('http://127.0.0.1:5000/');
-  // var request = http.MultipartRequest('POST', uri);
-
-  // Add image as multipart
-  // var pic = await http.MultipartFile.fromPath(
-  //   'file', 
-  //   _image!.path,
-  //   contentType: MediaType('image', 'jpeg'), 
-  // );
-  print(reader.result as String);
-  String base64Image = reader.result as String;
-  // base64Image = base64Image.split(',').last;
-
-  final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'image': base64Image,
-        'filename': _image!.path.split('/').last, 
-      }),
-    );
-  // request.files.add(await http.MultipartFile.fromBytes(
-  //   'file', 
-  //   imageBytes,
-  //   contentType: MediaType('image', 'jpeg'), // You can adjust for the image type
-  // ));
-  // Add file to request
-  // request.files.add(pic);
-
-  // Send request
-
-  // Check response
-  if (response.statusCode == 200) {
-    print(response.body);
-  } else {
-    print('Failed to upload image');
+    request.send().then((response)  async {
+      if (response.statusCode == 200) {
+        String res = await response.stream.bytesToString();
+         print(res);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res)));
+      } else {
+        print('file upload failed');
+      }
+    });
   }
-    }
-    );
-}
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Image Upload Example')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Center(
+            child: Column(
           children: [
-            _image != null
-                ? Image.network(_image!.path)
-                : Text('No image selected'),
             SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _pickImage,
-              child: Text('Pick Image from Gallery'),
+            MaterialButton(
+               color: Colors.pink,
+              elevation: 8,
+              highlightElevation: 2,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              textColor: Colors.white,
+              child: Text("Select Photo"),
+              onPressed: () {
+                startWebFilePicker();
+              },
             ),
-            // ElevatedButton(
-            //   onPressed: _pickImageFromCamera,
-            //   child: Text('Pick Image from Camera'),
-            // ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _image != null ? _uploadImage : null,
-              child: Text('Upload Image'),
+            _bytesData != null
+                ? Image.memory(_bytesData!, width: 200, height: 200)
+                : Container(),
+            MaterialButton(
+               color: Colors.pink,
+              elevation: 8,
+              highlightElevation: 2,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              textColor: Colors.white,
+              child: Text("Send file to server"),
+              onPressed: () {
+                uploadImage();
+              },
             ),
           ],
-        ),
+        )),
       ),
     );
   }
 }
-
